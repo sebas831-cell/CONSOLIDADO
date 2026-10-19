@@ -454,9 +454,9 @@ if ruta:
                 st.dataframe(d_t[cols_t],hide_index=True,use_container_width=True,
                              column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
 else:
-    st.caption('💡 Haz clic en un punto o en una barra para ver el detalle de ese departamento, provincia o distrito.')
-
-st.caption('🔵 UIR · Descolmatación  |  🟢 UAT · Intervenciones. Tamaños normalizados por unidad. Las ubicaciones aproximadas (sin coordenada exacta de distrito) se muestran alrededor de su provincia o departamento y no representan coordenadas exactas. Navega por departamento, provincia y distrito.')
+    st.caption('🔵 UIR · Descolmatación  |  🟢 UAT · Intervenciones.')
+    st.caption('Tamaños normalizados por unidad. Las ubicaciones aproximadas (sin coordenada exacta de distrito) se muestran alrededor de su provincia o departamento y no representan coordenadas exactas. Navega por departamento, provincia y distrito.')
+           
 
 seccion('04 · Resultados por unidad')
 tab1,tab2=st.tabs(['🌊 UIR · Descolmatación','🌱 UAT · Intervenciones y metas'])
