@@ -459,7 +459,8 @@ else:
 
 # ═════════════ 04 · INTEGRACIÓN UIR + UAT ═════════════
 seccion('05 · Resultados por unidad')
-st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. ')
+st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. '
+                'Por eso no tiene sentido calcular una correlación estadística de beneficiarios entre ambas unidades.')
 tab1=st.container();tab2=st.container()
 with tab1:
     st.markdown('#### 🌊 UIR · Descolmatación')
@@ -514,18 +515,74 @@ with tab2:
                 fig=px.bar(largo,y='KIT',x='Atenciones',color='Tipo',orientation='h',barmode='group',color_discrete_map={'PROG':'#BAE6FD','AVANCE':'#16A34A'},title='Programado frente a avance')
             else:fig=px.bar(g,y='KIT',x='PROG',orientation='h',title='Programación por intervención',color_discrete_sequence=['#16A34A'])
             fig.update_layout(height=365,yaxis_title=None);graficar(fig,'v2_uat_barras')
-        if HAY_AV:
-            sem=dt.groupby(NIVELES,as_index=False)[['PROG','AVANCE']].sum()
-            sem['Porcentaje']=np.where(sem.PROG>0,sem.AVANCE/sem.PROG*100,np.nan)
-            sem['Estado']=sem.Porcentaje.map(estado_pct)
-            s=sem.Estado.value_counts().rename_axis('Estado').reset_index(name='Distritos')
-            fig=px.bar(s,x='Estado',y='Distritos',color='Estado',color_discrete_map={x[1]:x[2] for x in SEMAFORO},title='Semáforo de cumplimiento por distrito')
-            fig.update_layout(height=290,showlegend=False,xaxis_title=None);graficar(fig,'v2_semaforo')
-        st.markdown('**Leyenda de cumplimiento:** 🟢 Cumplido (≥100%) · 🟩 Aceptable (70–99%) · 🟠 En riesgo (40–69%) · 🔴 Crítico (<40%)')
-        with st.expander('Ver tabla UAT y descargar'):
-            cols=NIVELES+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
-            st.dataframe(dt[cols],hide_index=True,use_container_width=True)
-            st.download_button('Descargar UAT (CSV)',dt[cols].to_csv(index=False).encode('utf-8-sig'),'uat_filtrado.csv','text/csv')
+        
+
+if HAY_AV:
+    # Agrupar únicamente por departamento
+    sem = dt.groupby(
+        NIVELES[0], as_index=False
+    )[['PROG', 'AVANCE']].sum()
+
+    # Calcular cumplimiento por departamento
+    sem['Porcentaje'] = np.where(
+        sem['PROG'] > 0,
+        sem['AVANCE'] / sem['PROG'] * 100,
+        np.nan
+    )
+
+    # Asignar estado de cumplimiento
+    sem['Estado'] = sem['Porcentaje'].map(estado_pct)
+
+    # Ordenar departamentos
+    sem = sem.sort_values('Porcentaje', ascending=False)
+
+    # Crear gráfico individual por departamento
+    fig = px.bar(
+        sem,
+        x=NIVELES[0],
+        y='Porcentaje',
+        color='Estado',
+        color_discrete_map={
+            x[1]: x[2] for x in SEMAFORO
+        },
+        text='Porcentaje',
+        title='Cumplimiento por departamento',
+        hover_data={
+            'PROG': True,
+            'AVANCE': True,
+            'Porcentaje': ':.1f'
+        }
+    )
+
+    # Mostrar porcentaje sobre cada barra
+    fig.update_traces(
+        texttemplate='%{text:.1f}%',
+        textposition='outside',
+        cliponaxis=False
+    )
+
+    fig.update_layout(
+        height=350,
+        showlegend=False,
+        xaxis_title=None,
+        yaxis_title='Cumplimiento (%)',
+        xaxis_tickangle=-45,
+        bargap=0.35,
+        margin=dict(t=55, b=85, l=40, r=30)
+    )
+
+    fig.update_yaxes(
+        range=[
+            0,
+            max(110, sem['Porcentaje'].max() * 1.15)
+            if sem['Porcentaje'].notna().any()
+            else 110
+        ]
+    )
+
+    graficar(fig, 'v2_semaforo')
+
+
 
 with st.expander('Notas metodológicas y calidad de datos'):
     st.markdown('**UIR:** se excluye del impacto el estado «Atendido en otros proyectos». **UAT:** Praderas = meta física ÷ 5 × 3. **Cobertura:** distritos únicos entre unidades. **Beneficiarios:** no se suman UIR y UAT, pues no se ha validado que sean personas únicas ni indicadores equivalentes.')
