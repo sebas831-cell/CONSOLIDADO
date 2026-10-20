@@ -455,12 +455,15 @@ if ruta:
                              column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
 else:
     st.caption('🔵 UIR · Descolmatación  |  🟢 UAT · Intervenciones.')
-    st.caption('Tamaños normalizados por unidad. Las ubicaciones aproximadas (sin coordenada exacta de distrito) se muestran alrededor de su provincia o departamento y no representan coordenadas exactas. Navega por departamento, provincia y distrito.')
-           
+    st.caption('Tamaños normalizados por unidad. Haz clic en un punto o en una barra para ver el detalle. Las ubicaciones aproximadas (sin coordenada exacta de distrito) no representan coordenadas exactas. Navega por departamento, provincia y distrito.')
 
-seccion('04 · Resultados por unidad')
-tab1,tab2=st.tabs(['🌊 UIR · Descolmatación','🌱 UAT · Intervenciones y metas'])
+# ═════════════ 04 · INTEGRACIÓN UIR + UAT ═════════════
+seccion('05 · Resultados por unidad')
+st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. '
+                'Por eso no tiene sentido calcular una correlación estadística de beneficiarios entre ambas unidades.')
+tab1=st.container();tab2=st.container()
 with tab1:
+    st.markdown('#### 🌊 UIR · Descolmatación')
     if u.empty:st.info('UIR no tiene registros en la selección actual.')
     else:
         p1,p2=st.columns(2)
@@ -491,6 +494,7 @@ with tab1:
             st.dataframe(du[cols],hide_index=True,use_container_width=True)
             st.download_button('Descargar UIR (CSV)',du[cols].to_csv(index=False).encode('utf-8-sig'),'uir_filtrado.csv','text/csv')
 with tab2:
+    st.markdown('#### 🌱 UAT · Intervenciones y metas')
     if t.empty:st.info('UAT no tiene registros en la selección actual.')
     else:
         kit=st.selectbox('Intervención',['Todas las intervenciones']+sorted(t.KIT.unique()),key='v2_kit')
