@@ -188,7 +188,7 @@ with b:
     with st.container(border=True):
         st.markdown('**🌱 UAT · Intervenciones agropecuarias**')
         c1,c2,c3=st.columns(3)
-        c1.metric('Tipos de intervención',t.KIT.nunique())
+        c1.metric('Intervenciones',t.KIT.nunique())
         c2.metric('Atenciones',f'{t.PROG.sum():,.0f}')
         c3.metric('Distritos',len(loc_t))
 
@@ -440,7 +440,7 @@ if ruta:
                 st.caption('Sin intervenciones UAT en este territorio.')
             else:
                 m=st.columns(3)
-                m[0].metric('Tipos de intervención',d_t.KIT.nunique())
+                m[0].metric('Intervenciones',d_t.KIT.nunique())
                 m[1].metric('Atenciones',f'{d_t.PROG.sum():,.0f}')
                 m[2].metric('Cumplimiento',f'{d_t.AVANCE.sum()/d_t.PROG.sum()*100:.1f}%' if HAY_AV and d_t.PROG.sum()>0 else 'Sin avance')
         extra=['DISTRITO'] if len(ruta)<3 else []
@@ -500,7 +500,7 @@ with tab2:
         kit=st.selectbox('Intervención',['Todas las intervenciones']+sorted(t.KIT.unique()),key='v2_kit')
         dt=t if kit=='Todas las intervenciones' else t[t.KIT.eq(kit)]
         ks=st.columns(4)
-        ks[0].metric('Tipos de intervención',dt.KIT.nunique())
+        ks[0].metric('Intervenciones',dt.KIT.nunique())
         ks[1].metric('Metas',len(dt))
         ks[2].metric('Atenciones programadas',f'{dt.PROG.sum():,.0f}')
         ks[3].metric('Cumplimiento',f'{dt.AVANCE.sum()/dt.PROG.sum()*100:.1f}%' if HAY_AV and dt.PROG.sum()>0 else 'Sin avance')
