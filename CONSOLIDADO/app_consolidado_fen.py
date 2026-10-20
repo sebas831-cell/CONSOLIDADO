@@ -10,6 +10,7 @@ import unicodedata
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(page_title="Consolidado FEN 2026–2027", page_icon="🇵🇪", layout="wide")
@@ -197,11 +198,20 @@ st.caption('Un mapa compartido, con UIR en azul y UAT en verde. Haz clic en un p
 
 # Cada nivel territorial agrupa las ubicaciones de cada unidad, para evitar
 # mostrar centenares de distritos en la vista nacional.
+# Si arriba ya se filtró por departamento (o provincia/distrito), el mapa arranca
+# en ese lugar y muestra directamente el nivel siguiente (p. ej. las provincias de Lima),
+# en vez de un solo punto gigante.
+fijo=[]
+if dep!='Todo el Perú':
+    fijo.append(dep)
+    if prov!='Todas las provincias':
+        fijo.append(prov)
+        if dist!='Todos los distritos': fijo.append(dist)
 if 'ruta_mapa_v5' not in st.session_state:
-    st.session_state.ruta_mapa_v5 = []
+    st.session_state.ruta_mapa_v5 = list(fijo)
 firma = (dep, prov, dist, vista)
 if st.session_state.get('firma_mapa_v5') != firma:
-    st.session_state.ruta_mapa_v5 = []
+    st.session_state.ruta_mapa_v5 = list(fijo)
     st.session_state.firma_mapa_v5 = firma
 
 bases=[]
@@ -325,10 +335,10 @@ if len(ruta)<3 and not mapa_data.empty:
         st.session_state.ruta_mapa_v5=ruta+[elegir];st.rerun()
 else:
     enc_ir.empty()
-if enc2.button('⬆ Subir',disabled=not ruta,key='subir_v5',use_container_width=True):
+if enc2.button('⬆ Subir',disabled=len(ruta)<=len(fijo),key='subir_v5',use_container_width=True):
     st.session_state.ruta_mapa_v5=ruta[:-1];st.rerun()
-if enc3.button('🏠 Perú',disabled=not ruta,key='peru_v5',use_container_width=True):
-    st.session_state.ruta_mapa_v5=[];st.rerun()
+if enc3.button('🏠 Inicio',disabled=len(ruta)<=len(fijo),key='peru_v5',use_container_width=True):
+    st.session_state.ruta_mapa_v5=list(fijo);st.rerun()
 
 # ── CORRECCIÓN DEL MAPA (3/3): identificar el lugar clicado de forma robusta ──
 # Primero por customdata; si el navegador no lo devuelve, se reconstruye con
@@ -345,6 +355,8 @@ def lugar_clic(pt,dfp):
     except Exception:
         return None
 
+n_lugares=int(mapa_data.LUGAR.nunique())
+altura=int(np.clip(150+42*min(n_lugares,28),340,570))  # pocas barras -> gráfico más bajo y ordenado
 izq,der=st.columns([1,1],gap='medium')
 with izq:
     with st.container(border=True):
@@ -362,7 +374,7 @@ with izq:
                 category_orders={'UNIDAD':['UAT','UIR']},
                 hover_name='NOMBRE',custom_data=['LUGAR','UNIDAD'],
                 hover_data={'VALOR':':,.0f','TAM':False,'LAT':False,'LON_VIS':False,'COORD_APROX':True},
-                map_style='carto-positron',height=570,
+                map_style='carto-positron',height=altura,
                 center={'lat':float(puntos.LAT.mean()),'lon':float(puntos.LON.mean())},zoom=zoom)
             fig.update_traces(marker=dict(opacity=.88))
             fig.update_layout(margin=dict(l=0,r=0,t=0,b=0),
@@ -393,10 +405,10 @@ with der:
         else:
             graf=px.bar(ranking,y='ETIQUETA',x='VALOR',color='UNIDAD',
                 orientation='h',barmode='group',color_discrete_map=COLORES,
-                custom_data=['LUGAR'],height=570,text_auto=',.0f',
+                custom_data=['LUGAR'],height=altura,text_auto=',.0f',
                 labels={'VALOR':'Beneficiarios / atenciones','ETIQUETA':''})
             graf.update_layout(margin=dict(l=8,r=12,t=20,b=10),legend=dict(orientation='h',y=1.06),paper_bgcolor='white',plot_bgcolor='white')
-            graf.update_xaxes(rangemode='tozero')
+            graf.update_xaxes(rangemode='tozero');graf.update_layout(bargap=.35)
             if ranking.VALOR.sum()==0:
                 st.info('Este territorio no registra beneficiarios/atenciones en los datos (sectores con 0 beneficiarios o intervenciones atendidas en otros proyectos). Revisa el detalle más abajo.')
             try:
@@ -418,169 +430,392 @@ def por_ruta(d):
         d=d[d[NIVELES[i]].eq(l)]
     return d
 
-if ruta:
+st.markdown('<div style="display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;font-size:13px;color:#52685C;margin:8px 2px 14px"><span><b style="color:#1976D2">●</b> UIR · Descolmatación</span><span><b style="color:#16A34A">●</b> UAT · Intervenciones</span><span style="margin-left:auto;font-size:12px">Tamaño normalizado por unidad · clic en un punto o barra para profundizar · ubicaciones sin coordenada exacta son aproximadas</span></div>',unsafe_allow_html=True)
+
+if len(ruta)>len(fijo) or len(ruta)==3:
     d_u=por_ruta(u); d_t=por_ruta(t)
     with st.container(border=True):
         st.markdown('**📍 Detalle de '+' › '.join(x.title() for x in ruta)+'**')
-        cu,ct=st.columns(2,gap='medium')
+        cu,ct=st.columns(2,gap='large')
         with cu:
             st.markdown('🌊 **UIR · Descolmatación**')
             if d_u.empty:
                 st.caption('Sin intervenciones UIR en este territorio.')
             else:
-                m=st.columns(4)
+                m=st.columns(2)
                 m[0].metric('Intervenciones',len(d_u))
                 m[1].metric('Beneficiarios',f'{d_u.BENEFICIARIOS.sum():,.0f}')
-                m[2].metric('Hectáreas',f'{d_u.HECTAREAS.sum():,.2f}')
-                m[3].metric('Km',f'{d_u.KM.sum():,.2f}')
+                m=st.columns(2)
+                m[0].metric('Hectáreas',f'{d_u.HECTAREAS.sum():,.2f}')
+                m[1].metric('Km',f'{d_u.KM.sum():,.2f}')
                 st.caption(' · '.join(f'{k.title()}: {v}' for k,v in d_u.ESTADO.value_counts().items()))
         with ct:
             st.markdown('🌱 **UAT · Intervenciones agropecuarias**')
             if d_t.empty:
                 st.caption('Sin intervenciones UAT en este territorio.')
             else:
-                m=st.columns(3)
+                m=st.columns(2)
                 m[0].metric('Intervenciones',d_t.KIT.nunique())
                 m[1].metric('Atenciones',f'{d_t.PROG.sum():,.0f}')
-                m[2].metric('Cumplimiento',f'{d_t.AVANCE.sum()/d_t.PROG.sum()*100:.1f}%' if HAY_AV and d_t.PROG.sum()>0 else 'Sin avance')
+                m=st.columns(2)
+                m[0].metric('Distritos',len(d_t[NIVELES].drop_duplicates()))
+                m[1].metric('Cumplimiento',f'{d_t.AVANCE.sum()/d_t.PROG.sum()*100:.1f}%' if HAY_AV and d_t.PROG.sum()>0 else 'Sin avance')
         extra=['DISTRITO'] if len(ruta)<3 else []
-        if not d_u.empty:
-            with st.expander('Ver intervenciones UIR (sectores)',expanded=len(ruta)==3):
-                st.dataframe(d_u[extra+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']],
-                             hide_index=True,use_container_width=True)
-        if not d_t.empty:
-            with st.expander('Ver intervenciones UAT (kits)',expanded=len(ruta)==3):
-                cols_t=extra+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
-                st.dataframe(d_t[cols_t],hide_index=True,use_container_width=True,
-                             column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
-else:
-    st.caption('🔵 UIR · Descolmatación  |  🟢 UAT · Intervenciones.')
-    st.caption('Tamaños normalizados por unidad. Haz clic en un punto o en una barra para ver el detalle. Las ubicaciones aproximadas (sin coordenada exacta de distrito) no representan coordenadas exactas. Navega por departamento, provincia y distrito.')
+        pestanas=[]
+        if not d_u.empty: pestanas.append('🌊 Tabla UIR (sectores)')
+        if not d_t.empty: pestanas.append('🌱 Tabla UAT (kits)')
+        if pestanas:
+            for tab,nombre in zip(st.tabs(pestanas),pestanas):
+                with tab:
+                    if 'UIR' in nombre:
+                        st.dataframe(d_u[extra+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']],
+                                     hide_index=True,use_container_width=True)
+                    else:
+                        cols_t=extra+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
+                        st.dataframe(d_t[cols_t],hide_index=True,use_container_width=True,
+                                     column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
 
-# ═════════════ 04 · INTEGRACIÓN UIR + UAT ═════════════
-seccion('05 · Resultados por unidad')
-st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. '
-                'Por eso no tiene sentido calcular una correlación estadística de beneficiarios entre ambas unidades.')
-tab1=st.container();tab2=st.container()
-with tab1:
+# ═════════════ 05 · AVANCE POR UNIDAD (DONA + DETALLE SOLO AL HACER CLIC) ═════════════
+seccion('05 · Avance de intervenciones por unidad')
+st.caption('Haz clic en UIR o UAT (en el círculo o en los botones) para desplegar su información. Para cerrarla, vuelve a pulsar el botón de la unidad.')
+
+def serie_avance_uir(d):
+    """Serie de avance (0-100) por fila si el Excel UIR trae columna de avance; si no, None."""
+    nombres=('AVANCE','% AVANCE','AVANCE %','PORCENTAJE AVANCE','AVANCE FISICO','AVANCE_FISICO_%','AVANCE FISICO %')
+    for c in d.columns:
+        if norm(c) in nombres:
+            v=pd.to_numeric(d[c],errors='coerce')
+            if v.notna().any():
+                if v.max()<=1: v=v*100
+                return v.clip(0,100)
+    return None
+
+def avance_uir(d):
+    """Avance promedio de UIR; si el Excel no trae columna de avance, asume 100%."""
+    s=serie_avance_uir(d)
+    return float(s.mean()) if s is not None and s.notna().any() else 100.0
+
+def avance_uat(d):
+    if HAY_AV and d.PROG.sum()>0:
+        return float(np.clip(d.AVANCE.sum()/d.PROG.sum()*100,0,100))
+    return 100.0
+
+unidades_av=[]
+if not u.empty: unidades_av.append(('UIR','🌊 UIR · Descolmatación',avance_uir(u)))
+if not t.empty: unidades_av.append(('UAT','🌱 UAT · Intervenciones agropecuarias',avance_uat(t)))
+
+if 'v6_sel' not in st.session_state: st.session_state.v6_sel=None
+if st.session_state.v6_sel not in [x[0] for x in unidades_av]:
+    st.session_state.v6_sel=None
+
+# El círculo SIEMPRE está completo: cada unidad ocupa una porción fija.
+# El porcentaje de avance se muestra en la etiqueta, no cambia el tamaño.
+fig_av=go.Figure(go.Pie(
+    labels=[x[0] for x in unidades_av],
+    values=[1]*len(unidades_av),
+    hole=.58,sort=False,direction='clockwise',
+    marker=dict(colors=[COLORES[x[0]] for x in unidades_av],line=dict(color='white',width=4)),
+    text=[f'<b>{x[0]}</b><br>{x[2]:.0f}% avance' for x in unidades_av],
+    textinfo='text',textfont=dict(size=17,color='white'),
+    pull=[0.06 if x[0]==st.session_state.v6_sel else 0 for x in unidades_av],
+    hovertemplate='<b>%{label}</b><br>Avance: %{customdata:.1f}%<extra></extra>',
+    customdata=[x[2] for x in unidades_av]))
+fig_av.update_layout(height=380,showlegend=False,margin=dict(l=10,r=10,t=20,b=10),
+    paper_bgcolor='white',
+    annotations=[dict(text='<b>Intervenciones</b><br>FEN 2026–2027',x=.5,y=.5,showarrow=False,font=dict(size=15,color='#174B32'))])
+
+_,c_dona,_=st.columns([1,1.4,1])
+with c_dona:
+    with st.container(border=True):
+        try:
+            ev=st.plotly_chart(fig_av,use_container_width=True,key='v6_dona',
+                               on_select='rerun',selection_mode='points')
+            pts=ev.selection.points
+            if pts:
+                idx=pts[0].get('point_number',pts[0].get('point_index'))
+                if idx is not None and idx!=st.session_state.get('v6_ultimo') and idx<len(unidades_av):
+                    st.session_state.v6_ultimo=idx
+                    st.session_state.v6_sel=unidades_av[idx][0]
+                    st.rerun()
+        except TypeError:
+            st.plotly_chart(fig_av,use_container_width=True)
+        # Botones con el nombre de cada unidad (respaldo fiable al clic en el gráfico)
+        bcols=st.columns(len(unidades_av))
+        for col,(cod,nombre,pct) in zip(bcols,unidades_av):
+            activo=st.session_state.v6_sel==cod
+            if col.button(f'{nombre.split(" · ")[0]} · {pct:.0f}%',key=f'v6_btn_{cod}',
+                          type='primary' if activo else 'secondary',use_container_width=True):
+                st.session_state.v6_sel=None if activo else cod
+                st.rerun()
+
+sel=st.session_state.v6_sel
+dt=t  # valor por defecto; si se abre UAT, se redefine según la intervención elegida
+
+if sel=='UIR':
+    PALETA=["#2E7D32","#1565C0","#EF6C00","#6A1B9A","#00838F","#AD1457","#8D6E63","#558B2F","#5C6BC0","#C62828","#00695C","#9E9D24"]
+    CMAP_ESTADO={**ESTADOS}
+    for i,e in enumerate(sorted(set(u.ESTADO)-set(ESTADOS))): CMAP_ESTADO[e]=PALETA[(i+3)%len(PALETA)]
+    CMAP_DEPTO={d:PALETA[i%len(PALETA)] for i,d in enumerate(sorted(u.DEPARTAMENTO.unique()))}
+    AV_REAL,AV_PROG='Avance_Fisico_%','Avance_Prog_%'
+    MONTOS=['Monto_Contratado','Monto_Ejecutado']
+    UMBRAL_ATRASO_PP=10;UMBRAL_DIAS_ESTANCADO=30
+
+    def clave_pq(p):
+        m=re.search(r'\d+',p)
+        return (re.sub(r'\d+','',p).strip(),int(m.group()) if m else 0,p)
+    def tiene(*cols): return all(c in u.columns and u[c].notna().any() for c in cols)
+    def pie_fen(data,names,values,title,key,cmap=None,fmt='%{value:,.0f}',height=340):
+        f=px.pie(data,names=names,values=values,hole=.45,color=names,color_discrete_map=cmap or {},
+                 color_discrete_sequence=PALETA,title=title)
+        f.update_traces(texttemplate=fmt+'<br>(%{percent})',textposition='inside',insidetextorientation='horizontal',
+                        textfont=dict(color='white',size=12),marker=dict(line=dict(color='white',width=2)),
+                        hovertemplate='<b>%{label}</b><br>'+fmt+'<br>%{percent}<extra></extra>',sort=True)
+        f.update_layout(height=height,legend=dict(orientation='v',yanchor='middle',y=.5,xanchor='left',x=1.02),
+                        uniformtext_minsize=10,uniformtext_mode='hide')
+        graficar(f,key)
+
+    es_pq=u.PAQUETE.ne('SIN PAQUETE')
+    u_pq=u[es_pq]
+    orden_pkg=sorted(u_pq.PAQUETE.unique(),key=clave_pq)
+
     st.markdown('#### 🌊 UIR · Descolmatación')
-    if u.empty:st.info('UIR no tiene registros en la selección actual.')
-    else:
-        p1,p2=st.columns(2)
-        paquete=p1.selectbox('Paquete',['Todos los paquetes']+sorted(u.PAQUETE.unique()),key='v2_pq')
-        est=p2.selectbox('Estado',['Todos los estados']+sorted(u.ESTADO.unique()),key='v2_est')
-        du=u.copy()
-        if paquete!='Todos los paquetes':du=du[du.PAQUETE.eq(paquete)]
-        if est!='Todos los estados':du=du[du.ESTADO.eq(est)]
-        ks=st.columns(5)
-        ks[0].metric('Intervenciones',len(du))
-        ks[1].metric('En contratación',du.ESTADO.eq('EN CONTRATACION').sum())
-        ks[2].metric('En ejecución',du.ESTADO.eq('EN EJECUCION').sum())
-        ks[3].metric('Culminadas',du.ESTADO.eq('CULMINADO').sum())
-        ks[4].metric('Hectáreas',f'{du.HECTAREAS.sum():,.2f}')
-        q1,q2=st.columns(2)
-        with q1:
-            estados=du.ESTADO.value_counts().rename_axis('Estado').reset_index(name='Intervenciones')
-            if len(estados):
-                fig=px.pie(estados,names='Estado',values='Intervenciones',hole=.56,color='Estado',color_discrete_map=ESTADOS,title='Situación de las intervenciones')
-                fig.update_layout(height=360);graficar(fig,'v2_uir_dona')
-        with q2:
-            gp=du[du.PAQUETE.ne('SIN PAQUETE')].groupby('PAQUETE').size().reset_index(name='Intervenciones').sort_values('Intervenciones',ascending=False).head(12)
-            if len(gp):
-                fig=px.bar(gp.sort_values('Intervenciones'),x='Intervenciones',y='PAQUETE',orientation='h',color_discrete_sequence=['#17805A'],title='Paquetes con más intervenciones')
-                fig.update_layout(height=360,yaxis_title=None);graficar(fig,'v2_uir_paquetes')
-        with st.expander('Ver tabla de intervenciones UIR y descargar'):
-            cols=NIVELES+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']
-            st.dataframe(du[cols],hide_index=True,use_container_width=True)
-            st.download_button('Descargar UIR (CSV)',du[cols].to_csv(index=False).encode('utf-8-sig'),'uir_filtrado.csv','text/csv')
-with tab2:
+
+    # ───────── ALERTAS: QUÉ DICE EL DASHBOARD ─────────
+    seccion('📈 Estado del portafolio · UIR')
+    st.markdown("""<style>
+    .alert-red{background:#FEF2F2;border-left:5px solid #DC2626;padding:12px 14px;border-radius:8px;color:#7F1D1D;height:100%}
+    .alert-amber{background:#FFF7ED;border-left:5px solid #F59E0B;padding:12px 14px;border-radius:8px;color:#78350F;height:100%}
+    .alert-green{background:#E8F5E9;border-left:5px solid #2E7D32;padding:12px 14px;border-radius:8px;color:#1B5E20;height:100%}
+    </style>""",unsafe_allow_html=True)
+    RE_PROBLEMA='ATENDIDO EN OTROS PROYECTOS|PENDIENTE|RIESGO|RETRAS|OBSERV'
+    total_u=len(u)
+    atencion_u=int(u.ESTADO.str.contains(RE_PROBLEMA,regex=True,na=False).sum())
+    ejecucion_u=int(u.ESTADO.str.contains('EJECUCION',na=False).sum())
+    pct_atencion=atencion_u/total_u*100 if total_u else 0
+    pct_ejec=ejecucion_u/total_u*100 if total_u else 0
+    a1,a2,a3=st.columns(3)
+    with a1:
+        st.markdown(f"""<div class="alert-red"><b>REQUIEREN SEGUIMIENTO</b><br><br>
+        {atencion_u:,} registros ({pct_atencion:.1f}%) están atendidos en otros proyectos, pendientes
+        o con riesgo/retraso.</div>""",unsafe_allow_html=True)
+    with a2:
+        cuello=u_pq[u_pq.ESTADO.str.contains('EN CONTRATACION|PENDIENTE|RIESGO|RETRAS|OBSERV',regex=True,na=False)]
+        if len(cuello):
+            top=cuello.PAQUETE.value_counts()
+            msg=(f"<b>{top.index[0]}</b> concentra {top.iloc[0]:,} intervenciones aún sin contratar "
+                 f"o con alerta: revisarlo primero.")
+        else:
+            msg='No hay paquetes con intervenciones por contratar o con alerta con los filtros actuales.'
+        st.markdown(f'<div class="alert-amber"><b>PRIORIDAD PMO</b><br><br>{msg}</div>',unsafe_allow_html=True)
+    with a3:
+        st.markdown(f"""<div class="alert-green"><b>AVANCE</b><br><br>
+        {ejecucion_u:,} registros ({pct_ejec:.1f}%) se encuentran en ejecución.</div>""",unsafe_allow_html=True)
+
+    # ───────── DISTRIBUCIÓN TERRITORIAL ─────────
+    seccion('🗺️ Distribución territorial · UIR')
+    NOMBRES_IND={'Intervenciones':'Intervenciones','BENEFICIARIOS':'Beneficiarios','HECTAREAS':'Hectáreas','KM':'Km'}
+    s1,s2=st.columns(2)
+    indicador=s1.radio('Indicador a evaluar',list(NOMBRES_IND),format_func=NOMBRES_IND.get,horizontal=True,key='v5_ind')
+    deptos_disp=sorted(u.DEPARTAMENTO.dropna().unique())
+    dept=s2.selectbox('Departamento para el detalle provincial',deptos_disp,key='v5_dept') if deptos_disp else None
+    fmt_ind='%{value:,.0f}' if indicador in ('Intervenciones','BENEFICIARIOS') else '%{value:,.1f}'
+    nom=NOMBRES_IND[indicador]
+    def serie_por(frame,col):
+        s=frame.groupby(col).size().rename('Valor') if indicador=='Intervenciones' else frame.groupby(col)[indicador].sum().rename('Valor')
+        return s[s>0].reset_index()
+    t1,t2=st.columns(2)
+    with t1:
+        d=serie_por(u,'DEPARTAMENTO')
+        if d.empty: st.warning(f'Sin datos de {nom} para los filtros actuales.')
+        else: pie_fen(d,'DEPARTAMENTO','Valor',f'{nom} por departamento','v5_pie_dep',cmap=CMAP_DEPTO,fmt=fmt_ind)
+    with t2:
+        if dept:
+            p=serie_por(u[u.DEPARTAMENTO==dept],'PROVINCIA')
+            if p.empty: st.warning(f'Sin datos de {nom} en {dept}.')
+            else: pie_fen(p,'PROVINCIA','Valor',f'{nom} por provincia · {dept}','v5_pie_prov',fmt=fmt_ind)
+    if dept:
+        df_dept=u[u.DEPARTAMENTO==dept]
+        u1,u2=st.columns(2)
+        with u1:
+            est_d=df_dept.groupby('ESTADO').size().reset_index(name='Registros')
+            pie_fen(est_d,'ESTADO','Registros',f'Estados de las intervenciones · {dept}','v5_pie_estdep',cmap=CMAP_ESTADO)
+        with u2:
+            est_p=df_dept.groupby(['PROVINCIA','ESTADO']).size().reset_index(name='Registros')
+            fig=px.bar(est_p,y='PROVINCIA',x='Registros',color='ESTADO',orientation='h',barmode='stack',
+                       color_discrete_map=CMAP_ESTADO,title=f'Estados por provincia · {dept}')
+            fig.update_layout(height=340,xaxis_title=None,yaxis_title=None,legend=dict(orientation='h',y=-.2,title=None))
+            graficar(fig,'v5_bar_estprov')
+
+    # ───────── DETALLE POR PAQUETE ─────────
+    seccion('🔍 Detalle por paquete · UIR')
+    paquete_detalle=st.selectbox('Selecciona un paquete',orden_pkg,key='v5_pkg') if orden_pkg else None
+    if paquete_detalle:
+        det=u_pq[u_pq.PAQUETE==paquete_detalle]
+        q=st.columns(4)
+        q[0].metric('Intervenciones',f'{len(det):,}')
+        q[1].metric('Beneficiarios',f'{det.BENEFICIARIOS.sum():,.0f}')
+        q[2].metric('Hectáreas',f'{det.HECTAREAS.sum():,.2f}')
+        q[3].metric('Kilómetros',f'{det.KM.sum():,.2f}')
+        v1,v2=st.columns(2)
+        with v1:
+            d_est=det.groupby('ESTADO').size().reset_index(name='Registros')
+            pie_fen(d_est,'ESTADO','Registros',f'Estados · {paquete_detalle}','v5_pie_pq_est',cmap=CMAP_ESTADO)
+        with v2:
+            d_dis=det.groupby('DISTRITO').size().reset_index(name='Registros')
+            pie_fen(d_dis,'DISTRITO','Registros',f'Distritos · {paquete_detalle}','v5_pie_pq_dis')
+        with st.expander(f'Ver intervenciones de {paquete_detalle}'):
+            cols_det=['PROVINCIA','DISTRITO','SECTOR','KM','BENEFICIARIOS','HECTAREAS','ESTADO']
+            st.dataframe(det[cols_det],hide_index=True,use_container_width=True)
+            st.download_button('Descargar UIR (CSV)',u[NIVELES+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']].to_csv(index=False).encode('utf-8-sig'),'uir_filtrado.csv','text/csv',key='v5_csv')
+
+    # ───────── BLOQUES OPCIONALES (se activan si el Excel trae las columnas) ─────────
+    if not u_pq.empty and (tiene(AV_REAL,AV_PROG) or tiene(*MONTOS) or tiene('Fecha_Cambio_Estado') or tiene('Restriccion')):
+        seccion('⏱️ Cronograma, costos y restricciones · UIR')
+        if tiene(AV_REAL,AV_PROG):
+            av=u_pq.assign(**{c:pd.to_numeric(u_pq[c],errors='coerce') for c in (AV_REAL,AV_PROG)}).groupby('PAQUETE')[[AV_REAL,AV_PROG]].mean().reindex(orden_pkg).reset_index()
+            av['Desviacion']=av[AV_REAL]-av[AV_PROG]
+            largo=av.melt(id_vars='PAQUETE',value_vars=[AV_REAL,AV_PROG],var_name='Tipo',value_name='Avance %')
+            largo['Tipo']=largo['Tipo'].map({AV_REAL:'Real',AV_PROG:'Programado'})
+            fig=px.bar(largo,x='PAQUETE',y='Avance %',color='Tipo',barmode='group',color_discrete_map={'Real':'#2E7D32','Programado':'#90A4AE'},title='Avance físico: real vs programado (promedio por paquete)')
+            fig.update_layout(height=340,xaxis_title=None,yaxis_title=None,legend=dict(orientation='h',y=-.35,title=None))
+            fig.update_xaxes(type='category',categoryorder='array',categoryarray=orden_pkg,tickangle=-45)
+            graficar(fig,'v5_av_real_prog')
+            atrasados=av[av.Desviacion<-UMBRAL_ATRASO_PP].sort_values('Desviacion')
+            if len(atrasados):
+                st.error('PAQUETES ATRASADOS (>%d pp): '%UMBRAL_ATRASO_PP+', '.join(f'{r.PAQUETE} ({r.Desviacion:.0f} pp)' for r in atrasados.itertuples()))
+        if tiene(*MONTOS):
+            fin=u_pq.assign(**{c:pd.to_numeric(u_pq[c],errors='coerce') for c in MONTOS}).groupby('PAQUETE')[MONTOS].sum().reindex(orden_pkg).reset_index()
+            fin['Saldo']=fin.Monto_Contratado-fin.Monto_Ejecutado
+            fin['% Ejecución']=(fin.Monto_Ejecutado/fin.Monto_Contratado*100).where(fin.Monto_Contratado>0)
+            largo=fin.melt(id_vars='PAQUETE',value_vars=MONTOS,var_name='Concepto',value_name='Monto')
+            fig=px.bar(largo,x='PAQUETE',y='Monto',color='Concepto',barmode='group',color_discrete_map={'Monto_Contratado':'#1565C0','Monto_Ejecutado':'#2E7D32'},title='Monto contratado vs ejecutado por paquete')
+            fig.update_layout(height=340,xaxis_title=None,yaxis_title=None,legend=dict(orientation='h',y=-.35,title=None))
+            fig.update_xaxes(type='category',categoryorder='array',categoryarray=orden_pkg,tickangle=-45)
+            graficar(fig,'v5_montos')
+            with st.expander('Ver tabla financiera por paquete'):
+                st.dataframe(fin,hide_index=True,use_container_width=True)
+        if tiene('Fecha_Cambio_Estado'):
+            estanc=u_pq[u_pq.ESTADO.str.contains('EN CONTRATACION',na=False)].copy()
+            estanc['Dias_en_estado']=(pd.Timestamp.today().normalize()-pd.to_datetime(estanc['Fecha_Cambio_Estado'],errors='coerce',dayfirst=True)).dt.days
+            estanc=estanc[estanc.Dias_en_estado>UMBRAL_DIAS_ESTANCADO].sort_values('Dias_en_estado',ascending=False)
+            st.warning(f'ESTANCADAS EN CONTRATACIÓN: {len(estanc):,} intervenciones llevan más de {UMBRAL_DIAS_ESTANCADO} días en contratación.')
+            if len(estanc):
+                with st.expander('Ver intervenciones estancadas'):
+                    st.dataframe(estanc[['PAQUETE','DISTRITO','SECTOR','Dias_en_estado']],hide_index=True,use_container_width=True)
+        if tiene('Restriccion'):
+            rs=u_pq['Restriccion'].dropna().astype(str).str.strip()
+            rs=rs[rs!=''].value_counts().reset_index();rs.columns=['Restriccion','Intervenciones']
+            if len(rs):
+                fig=px.bar(rs,x='Restriccion',y='Intervenciones',color_discrete_sequence=['#E65100'],title='Restricciones más frecuentes')
+                fig.update_traces(textposition='outside',cliponaxis=False);fig.update_layout(height=340,xaxis_title=None)
+                graficar(fig,'v5_restricciones')
+
+    # ───────── CONTROL DE CALIDAD ─────────
+    with st.expander('🧪 Control de calidad del Excel UIR'):
+        problemas=0
+        dpq=uir.PAQUETE.str.replace(r'\s*PQ\s*\d+$','',regex=True)
+        incons=uir[uir.PAQUETE.ne('SIN PAQUETE') & dpq.ne(uir.DEPARTAMENTO)]
+        if len(incons):
+            problemas+=1
+            st.warning(f'{len(incons)} intervenciones tienen un paquete que no corresponde a su departamento:')
+            st.dataframe(incons[['DEPARTAMENTO','PROVINCIA','DISTRITO','SECTOR','PAQUETE']],hide_index=True,use_container_width=True)
+        sin_pq=uir[uir.PAQUETE.eq('SIN PAQUETE') & uir.ESTADO.ne('ATENDIDO EN OTROS PROYECTOS')]
+        if len(sin_pq):
+            problemas+=1
+            st.warning(f'{len(sin_pq)} intervenciones vigentes (no atendidas en otros proyectos) no tienen paquete asignado:')
+            st.dataframe(sin_pq[['DEPARTAMENTO','PROVINCIA','DISTRITO','SECTOR','ESTADO']],hide_index=True,use_container_width=True)
+        dup=uir[uir.duplicated(['DISTRITO','SECTOR'],keep=False)]
+        if len(dup):
+            problemas+=1
+            st.warning(f'{len(dup)} filas comparten Distrito + Sector (posibles duplicados):')
+            st.dataframe(dup[['DISTRITO','SECTOR','PAQUETE','ESTADO']].sort_values(['DISTRITO','SECTOR']),hide_index=True,use_container_width=True)
+        st.caption(f"Atendidos en otros proyectos: {int(uir.ESTADO.eq('ATENDIDO EN OTROS PROYECTOS').sum())} · Paquetes con intervenciones: {uir.loc[uir.PAQUETE.ne('SIN PAQUETE'),'PAQUETE'].nunique()}")
+        if problemas==0: st.success('Sin inconsistencias detectadas.')
+    with st.expander('📝 Columnas que activarían más secciones'):
+        CATALOGO={'Avance_Fisico_%':'Avance real (0-100): activa el semáforo real','Avance_Prog_%':'Avance programado (0-100)','Monto_Contratado':'Monto del contrato','Monto_Ejecutado':'Monto ejecutado/valorizado','Fecha_Cambio_Estado':'Fecha en que pasó al estado actual','Restriccion':'Permiso ANA, predio/acceso, maquinaria, clima, conflicto social, otro'}
+        faltan={k:v for k,v in CATALOGO.items() if k not in uir.columns}
+        if faltan: st.markdown('\n'.join(f'- **{k}**: {v}' for k,v in faltan.items()))
+        else: st.success('El Excel ya trae todas las columnas opcionales.')
+
+# ── Detalle UAT: solo visible al seleccionar UAT ──
+elif sel=='UAT':
     st.markdown('#### 🌱 UAT · Intervenciones y metas')
-    if t.empty:st.info('UAT no tiene registros en la selección actual.')
-    else:
-        kit=st.selectbox('Intervención',['Todas las intervenciones']+sorted(t.KIT.unique()),key='v2_kit')
-        dt=t if kit=='Todas las intervenciones' else t[t.KIT.eq(kit)]
-        ks=st.columns(4)
-        ks[0].metric('Intervenciones',dt.KIT.nunique())
-        ks[1].metric('Metas',len(dt))
-        ks[2].metric('Atenciones programadas',f'{dt.PROG.sum():,.0f}')
-        ks[3].metric('Cumplimiento',f'{dt.AVANCE.sum()/dt.PROG.sum()*100:.1f}%' if HAY_AV and dt.PROG.sum()>0 else 'Sin avance')
-        g=dt.groupby('KIT',as_index=False)[['PROG','AVANCE']].sum()
-        q1,q2=st.columns(2)
-        with q1:
-            fig=px.pie(g,names='KIT',values='PROG',hole=.56,title='Atenciones programadas por intervención')
-            fig.update_layout(height=365);graficar(fig,'v2_uat_dona')
-        with q2:
-            if HAY_AV:
-                largo=g.melt(id_vars='KIT',value_vars=['PROG','AVANCE'],var_name='Tipo',value_name='Atenciones')
-                fig=px.bar(largo,y='KIT',x='Atenciones',color='Tipo',orientation='h',barmode='group',color_discrete_map={'PROG':'#BAE6FD','AVANCE':'#16A34A'},title='Programado frente a avance')
-            else:fig=px.bar(g,y='KIT',x='PROG',orientation='h',title='Programación por intervención',color_discrete_sequence=['#16A34A'])
-            fig.update_layout(height=365,yaxis_title=None);graficar(fig,'v2_uat_barras')
-        
+    kit=st.selectbox('Intervención',['Todas las intervenciones']+sorted(t.KIT.unique()),key='v2_kit')
+    dt=t if kit=='Todas las intervenciones' else t[t.KIT.eq(kit)]
+    ks=st.columns(4)
+    ks[0].metric('Intervenciones',dt.KIT.nunique())
+    ks[1].metric('Metas',len(dt))
+    ks[2].metric('Atenciones programadas',f'{dt.PROG.sum():,.0f}')
+    ks[3].metric('Cumplimiento',f'{dt.AVANCE.sum()/dt.PROG.sum()*100:.1f}%' if HAY_AV and dt.PROG.sum()>0 else 'Sin avance')
+    g=dt.groupby('KIT',as_index=False)[['PROG','AVANCE']].sum()
+    q1,q2=st.columns(2)
+    with q1:
+        fig=px.pie(g,names='KIT',values='PROG',hole=.56,title='Atenciones programadas por intervención')
+        fig.update_layout(height=365);graficar(fig,'v2_uat_dona')
+    with q2:
+        if HAY_AV:
+            largo=g.melt(id_vars='KIT',value_vars=['PROG','AVANCE'],var_name='Tipo',value_name='Atenciones')
+            fig=px.bar(largo,y='KIT',x='Atenciones',color='Tipo',orientation='h',barmode='group',color_discrete_map={'PROG':'#BAE6FD','AVANCE':'#16A34A'},title='Programado frente a avance')
+        else:fig=px.bar(g,y='KIT',x='PROG',orientation='h',title='Programación por intervención',color_discrete_sequence=['#16A34A'])
+        fig.update_layout(height=365,yaxis_title=None);graficar(fig,'v2_uat_barras')
+    # ───────── UAT POR TERRITORIO E INTERVENCIÓN ─────────
+    seccion('📍 UAT por territorio e intervención')
+    ini_nv=0 if dep=='Todo el Perú' else (1 if prov=='Todas las provincias' else 2)
+    nv=st.radio('Ver por',['Departamento','Provincia','Distrito'],index=ini_nv,horizontal=True,key=f'v7_nivel_uat_{ini_nv}')
+    colnv=nv.upper()
+    dtt=dt.copy()
+    dtt['LUGAR']=dtt.DISTRITO.str.title()+' · '+dtt.PROVINCIA.str.title() if colnv=='DISTRITO' else dtt[colnv].str.title()
+    por=dtt.groupby('LUGAR',as_index=False).agg(PROG=('PROG','sum'),AVANCE=('AVANCE','sum'),Intervenciones=('KIT','nunique'))
+    por['Porcentaje']=np.where(por.PROG>0,por.AVANCE/por.PROG*100,np.nan)
+    por=por.sort_values('PROG',ascending=False)
+    top=por.head(25).sort_values('PROG')
+    alto=int(np.clip(110+30*len(top),280,820))
+    if len(por)>25:
+        st.caption(f'Se muestran los 25 con más atenciones programadas de {len(por)} {nv.lower()}s; la tabla incluye todos.')
+    cA,cB=st.columns(2)
+    with cA:
+        if HAY_AV:
+            top=top.assign(Estado=top.Porcentaje.map(estado_pct))
+            fig=px.bar(top,x='Porcentaje',y='LUGAR',orientation='h',color='Estado',text='Porcentaje',
+                       color_discrete_map={x[1]:x[2] for x in SEMAFORO},title=f'Cumplimiento por {nv.lower()} · UAT')
+            fig.update_traces(texttemplate='%{text:.1f}%',textposition='outside',cliponaxis=False)
+            mx=top.Porcentaje.max()
+            fig.update_xaxes(range=[0,max(110,mx*1.15 if pd.notna(mx) else 110)],title='Cumplimiento (%)')
+            fig.update_layout(legend=dict(orientation='h',y=-.12,title=None))
+        else:
+            fig=px.bar(top,x='PROG',y='LUGAR',orientation='h',color_discrete_sequence=['#16A34A'],text='PROG',
+                       title=f'Atenciones programadas por {nv.lower()} · UAT')
+            fig.update_traces(texttemplate='%{text:,.0f}',textposition='outside',cliponaxis=False)
+            fig.update_xaxes(title='Atenciones programadas')
+        fig.update_yaxes(title=None,categoryorder='array',categoryarray=list(top.LUGAR))
+        fig.update_layout(height=alto,bargap=.3)
+        graficar(fig,'v7_uat_terr_pct')
+    with cB:
+        comp=dtt[dtt.LUGAR.isin(top.LUGAR)].groupby(['LUGAR','KIT'],as_index=False).PROG.sum()
+        fig=px.bar(comp,x='PROG',y='LUGAR',color='KIT',orientation='h',barmode='stack',
+                   title=f'Qué intervenciones hay en cada {nv.lower()}',labels={'PROG':'Atenciones programadas','KIT':'Intervención'})
+        fig.update_yaxes(title=None,categoryorder='array',categoryarray=list(top.LUGAR))
+        fig.update_layout(height=alto,bargap=.3,legend=dict(orientation='h',y=-.12,title=None))
+        graficar(fig,'v7_uat_terr_kits')
+    with st.expander(f'Ver tablas por {nv.lower()} (resumen y por intervención)'):
+        tr,tk=st.tabs([f'Resumen por {nv.lower()}','Atenciones por intervención'])
+        with tr:
+            res=por.rename(columns={'LUGAR':nv,'PROG':'Programado','AVANCE':'Avance','Porcentaje':'Cumplimiento'})
+            if not HAY_AV: res=res.drop(columns=['Avance','Cumplimiento'])
+            cfg={'Cumplimiento':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')} if HAY_AV else {}
+            st.dataframe(res,hide_index=True,use_container_width=True,column_config=cfg)
+        with tk:
+            piv=dtt.pivot_table(index='LUGAR',columns='KIT',values='PROG',aggfunc='sum',fill_value=0).round(0).reset_index().rename(columns={'LUGAR':nv})
+            st.dataframe(piv,hide_index=True,use_container_width=True)
 
-if HAY_AV:
-    # Agrupar únicamente por departamento
-    sem = dt.groupby(
-        NIVELES[0], as_index=False
-    )[['PROG', 'AVANCE']].sum()
 
-    # Calcular cumplimiento por departamento
-    sem['Porcentaje'] = np.where(
-        sem['PROG'] > 0,
-        sem['AVANCE'] / sem['PROG'] * 100,
-        np.nan
-    )
+    with st.expander('Ver tabla de intervenciones UAT'):
+        cols_t=NIVELES+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
+        st.dataframe(dt[cols_t],hide_index=True,use_container_width=True)
 
-    # Asignar estado de cumplimiento
-    sem['Estado'] = sem['Porcentaje'].map(estado_pct)
 
-    # Ordenar departamentos
-    sem = sem.sort_values('Porcentaje', ascending=False)
+# ═════════════ SECCIONES FINALES ═════════════
 
-    # Crear gráfico individual por departamento
-    fig = px.bar(
-        sem,
-        x=NIVELES[0],
-        y='Porcentaje',
-        color='Estado',
-        color_discrete_map={
-            x[1]: x[2] for x in SEMAFORO
-        },
-        text='Porcentaje',
-        title='Cumplimiento por departamento',
-        hover_data={
-            'PROG': True,
-            'AVANCE': True,
-            'Porcentaje': ':.1f'
-        }
-    )
-
-    # Mostrar porcentaje sobre cada barra
-    fig.update_traces(
-        texttemplate='%{text:.1f}%',
-        textposition='outside',
-        cliponaxis=False
-    )
-
-    fig.update_layout(
-        height=350,
-        showlegend=False,
-        xaxis_title=None,
-        yaxis_title='Cumplimiento (%)',
-        xaxis_tickangle=-45,
-        bargap=0.35,
-        margin=dict(t=55, b=85, l=40, r=30)
-    )
-
-    fig.update_yaxes(
-        range=[
-            0,
-            max(110, sem['Porcentaje'].max() * 1.15)
-            if sem['Porcentaje'].notna().any()
-            else 110
-        ]
-    )
-
-    graficar(fig, 'v2_semaforo')
 
 
 
