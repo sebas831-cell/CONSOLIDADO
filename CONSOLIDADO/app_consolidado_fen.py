@@ -459,8 +459,7 @@ else:
 
 # ═════════════ 04 · INTEGRACIÓN UIR + UAT ═════════════
 seccion('05 · Resultados por unidad')
-st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. '
-                'Por eso no tiene sentido calcular una correlación estadística de beneficiarios entre ambas unidades.')
+st.info('**Lectura del cruce:** en esta selección UIR y UAT no comparten ningún distrito. ')
 tab1=st.container();tab2=st.container()
 with tab1:
     st.markdown('#### 🌊 UIR · Descolmatación')
