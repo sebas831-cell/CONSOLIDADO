@@ -501,7 +501,7 @@ with tab2:
         dt=t if kit=='Todas las intervenciones' else t[t.KIT.eq(kit)]
         ks=st.columns(4)
         ks[0].metric('Tipos de intervención',dt.KIT.nunique())
-        ks[1].metric('Metas / registros',len(dt))
+        ks[1].metric('Metas',len(dt))
         ks[2].metric('Atenciones programadas',f'{dt.PROG.sum():,.0f}')
         ks[3].metric('Cumplimiento',f'{dt.AVANCE.sum()/dt.PROG.sum()*100:.1f}%' if HAY_AV and dt.PROG.sum()>0 else 'Sin avance')
         g=dt.groupby('KIT',as_index=False)[['PROG','AVANCE']].sum()
