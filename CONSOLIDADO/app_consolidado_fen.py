@@ -2,6 +2,7 @@
 Ejecutar: streamlit run app_consolidado_fen.py
 Archivos: EXCEL DS 164 EF(2).xlsx, datos_fen_2026(1).xlsx,
 plantilla_avance_fen_2026.xlsx, coordenadas_distritos.xlsx.
+Todo el tema visual está incluido en este mismo archivo.
 """
 from pathlib import Path
 import re
@@ -12,8 +13,120 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+try:
+    from streamlit_plotly_events import plotly_events
+except ImportError:
+    plotly_events = None
+
+# ═════════════ TEMA VISUAL (estilo, plantilla de gráficos y cabecera) ═════════════
+FUENTE = "Manrope, system-ui, sans-serif"
+COLORWAY = ["#1F8A55", "#1976D2", "#F59E0B", "#7C3AED", "#0891B2",
+            "#DB2777", "#65A30D", "#64748B", "#EA580C", "#0F766E"]
+
+PLANTILLA = go.layout.Template(layout=dict(
+    font=dict(family=FUENTE, color="#274737", size=12),
+    colorway=COLORWAY,
+    paper_bgcolor="white",
+    plot_bgcolor="white",
+    title=dict(font=dict(size=15, color="#10281C"), x=0.01, xanchor="left"),
+    xaxis=dict(gridcolor="#EAF1EC", zerolinecolor="#DCE8E0", linecolor="#DCE8E0", ticks=""),
+    yaxis=dict(gridcolor="#EAF1EC", zerolinecolor="#DCE8E0", linecolor="#DCE8E0", ticks=""),
+    hoverlabel=dict(bgcolor="white", bordercolor="#DCE8E0",
+                    font=dict(family=FUENTE, color="#10281C", size=12)),
+))
+
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+:root{--ink:#10281C;--muted:#5B6F63;--line:#DCE8E0;--bg:#F4F8F5;--brand:#14532D;--brand2:#1F8A55}
+html,body,.stApp,[class*="css"]{font-family:'Manrope',system-ui,sans-serif}
+.stApp{background:var(--bg);color:var(--ink)}
+header[data-testid="stHeader"]{background:transparent}
+#MainMenu,footer{visibility:hidden}
+.block-container{max-width:1460px;padding:1.2rem 2.2rem 3rem}
+
+/* Cabecera */
+.hero{position:relative;overflow:hidden;margin-bottom:18px;padding:28px 32px;border-radius:20px;color:#fff;
+  background:
+   repeating-radial-gradient(circle at 94% -10%,transparent 0 26px,rgba(255,255,255,.055) 26px 27px),
+   linear-gradient(115deg,#0E3B22 0%,#14532D 45%,#1F8A55 100%);
+  box-shadow:0 10px 30px -12px rgba(20,83,45,.55)}
+.hero h1{margin:0;color:#fff;font-size:30px;font-weight:800;letter-spacing:-.6px;line-height:1.15}
+.hero p{margin:8px 0 0;color:#D6F5E2;font-size:14px;font-weight:500}
+.hero .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.hero .chip{padding:5px 12px;border-radius:999px;font-size:12px;font-weight:700;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22)}
+
+/* Títulos de sección */
+.section{display:flex;align-items:center;gap:14px;margin:30px 0 14px;
+  font-size:17px;font-weight:800;color:var(--brand);letter-spacing:-.2px;border:0;padding:0}
+.section::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* Indicadores */
+div[data-testid="stMetric"]{background:#fff;border:1px solid var(--line);border-left:4px solid var(--brand2);
+  border-radius:14px;padding:14px 18px;min-height:104px;box-shadow:0 6px 16px -10px rgba(20,83,45,.35)}
+div[data-testid="stMetricLabel"]{color:var(--muted);font-size:12.5px;font-weight:600}
+div[data-testid="stMetricValue"]{color:var(--brand);font-weight:800;font-size:28px;letter-spacing:-.5px}
+
+/* Contenedores con borde */
+div[data-testid="stVerticalBlockBorderWrapper"],
+div[data-testid="stVerticalBlock"][class*="border"]{border-color:var(--line)!important;border-radius:16px;background:#fff}
+div[data-testid="stPlotlyChart"]{border-radius:12px;overflow:hidden}
+div[data-testid="stDataFrame"]{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+
+/* Controles */
+div[data-baseweb="select"]>div{border-radius:10px;border-color:var(--line);background:#fff;min-height:42px}
+div[data-baseweb="select"]>div:hover{border-color:var(--brand2)}
+.stSelectbox label,.stRadio label p{font-weight:700;color:var(--ink)}
+.stButton>button,.stDownloadButton>button{border-radius:10px;font-weight:700;border:1px solid var(--line);
+  transition:box-shadow .15s,border-color .15s}
+.stButton>button:hover{border-color:var(--brand2);box-shadow:0 4px 12px -6px rgba(20,83,45,.5);color:var(--brand)}
+.stButton>button[kind="primary"]{background:var(--brand);border-color:var(--brand);color:#fff}
+
+/* Pestañas y expanders */
+div[data-testid="stTabs"] button{font-weight:700;color:var(--muted)}
+div[data-testid="stTabs"] button[aria-selected="true"]{color:var(--brand)}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"]{background:var(--brand2);height:3px}
+details{border:1px solid var(--line)!important;border-radius:14px!important;background:#fff}
+details summary{font-weight:700;color:var(--brand)}
+[data-testid="stCaptionContainer"]{color:var(--muted)}
+h4{color:var(--brand);font-weight:800;letter-spacing:-.3px}
+
+/* Alertas del portafolio UIR */
+.alert-red,.alert-amber,.alert-green{padding:14px 16px;border-radius:12px;height:100%;font-size:14px;line-height:1.5;
+  border:1px solid transparent;border-left-width:5px}
+.alert-red{background:#FEF2F2;border-color:#FECACA;border-left-color:#DC2626;color:#7F1D1D}
+.alert-amber{background:#FFFBEB;border-color:#FDE68A;border-left-color:#F59E0B;color:#78350F}
+.alert-green{background:#F0FDF4;border-color:#BBF7D0;border-left-color:#16A34A;color:#14532D}
+</style>
+"""
+
+
+def aplicar_tema():
+    """Inyecta fuente y CSS. Llamar una vez, justo después de st.set_page_config."""
+    st.markdown(CSS, unsafe_allow_html=True)
+
+
+def estilizar(fig):
+    """Aplica la plantilla y márgenes comunes a cualquier figura Plotly."""
+    fig.update_layout(template=PLANTILLA, margin=dict(l=15, r=15, t=55, b=18), legend_title=None)
+    try:
+        fig.update_layout(barcornerradius=4)  # esquinas redondeadas (Plotly >= 5.19)
+    except Exception:
+        pass
+    return fig
+
+
+def hero(titulo, subtitulo, chips=()):
+    """Cabecera principal con etiquetas opcionales."""
+    c = "".join(f'<span class="chip">{x}</span>' for x in chips)
+    st.markdown(
+        f'<div class="hero"><h1>{titulo}</h1><p>{subtitulo}</p>'
+        + (f'<div class="chips">{c}</div>' if c else "") + "</div>",
+        unsafe_allow_html=True)
 
 st.set_page_config(page_title="Consolidado FEN 2026–2027", page_icon="🇵🇪", layout="wide")
+aplicar_tema()
 BASE = Path(__file__).resolve().parent
 COLORES = {"UIR": "#1976D2", "UAT": "#16A34A"}
 ESTADOS = {"CONTRATADO":"#0891B2", "EN CONTRATACION":"#F59E0B", "EN EJECUCION":"#16A34A", "CULMINADO":"#2563EB", "ATENDIDO EN OTROS PROYECTOS":"#94A3B8"}
@@ -21,8 +134,6 @@ SEMAFORO = [(100,"Cumplido (≥100%)","#15803D"),(70,"Aceptable (70–99%)","#84
 NIVELES = ["DEPARTAMENTO","PROVINCIA","DISTRITO"]
 DEP_COORD = {"PIURA":(-5.1945,-80.6328),"LA LIBERTAD":(-8.1116,-79.0287),"ANCASH":(-9.5278,-77.5278),"LIMA":(-12.0464,-77.0428),"AREQUIPA":(-16.409,-71.5375)}
 KIT_CLAVES = [("ALIMENTO SUPLEMENTARIO","Alimento suplementario"),("INSUMOS AGRICOLAS","Insumos agrícolas"),("VETERINARIO","Veterinario"),("RIEGO","Riego"),("SEMILLAS","Semillas"),("PRADERAS","Praderas"),("ABREVADERO","Abrevadero")]
-
-st.markdown('''<style>.stApp{background:#F2F8F4}.block-container{max-width:1550px;padding-top:1.5rem}.hero{padding:23px 29px;background:linear-gradient(110deg,#14532D,#15803D);border-radius:15px;color:white;margin-bottom:20px}.hero h1{color:white;margin:0;font-size:29px}.hero p{margin:7px 0 0;color:#DCFCE7}.section{border-left:5px solid #16A34A;padding-left:12px;font-size:21px;font-weight:750;color:#14532D;margin:24px 0 12px}</style>''',unsafe_allow_html=True)
 
 def norm(x):
     if pd.isna(x): return ""
@@ -120,39 +231,128 @@ except Exception as exc:
     st.exception(exc);st.stop()
 
 
-# DISEÑO EJECUTIVO V2: una sola narrativa visual, con detalles bajo pestañas.
-st.markdown("""<style>
-.block-container{max-width:1460px;padding:1.1rem 2.1rem 2rem}
-.hero{margin-bottom:12px;padding:23px 28px;border-radius:18px;background:linear-gradient(105deg,#123F2A,#198754)}
-.hero h1{font-size:28px;letter-spacing:-.5px}.hero p{font-size:13px}
-div[data-testid="stMetric"]{background:white;border:1px solid #D8E7DD;border-radius:13px;padding:13px 17px;min-height:107px;box-shadow:0 2px 8px #164E2710}
-div[data-testid="stMetricLabel"]{color:#52685C;font-size:13px}
-div[data-testid="stMetricValue"]{color:#174B32;font-weight:750}
-div[data-testid="stVerticalBlockBorderWrapper"]{border-color:#D8E7DD!important;border-radius:15px;background:white}
-div[data-testid="stPlotlyChart"]{border-radius:12px;overflow:hidden}
-div[data-testid="stTabs"] button{font-weight:700}
-.section{font-size:18px;margin:23px 0 12px;border-left:4px solid #198754}
-[data-testid="stCaptionContainer"]{color:#607568}
-</style>""",unsafe_allow_html=True)
-
+# DISEÑO EJECUTIVO: el estilo vive en el bloque TEMA VISUAL (arriba).
 def seccion(t): st.markdown(f'<div class="section">{t}</div>',unsafe_allow_html=True)
 def graficar(fig,key):
-    fig.update_layout(template="plotly_white",paper_bgcolor="white",plot_bgcolor="white",margin=dict(l=15,r=15,t=55,b=18),font=dict(color="#274737",size=12),legend_title=None)
+    estilizar(fig)
     st.plotly_chart(fig,use_container_width=True,key=key)
 def tarjeta_vacia(msg): st.info(msg)
 
-st.markdown('<div class="hero"><h1>🌿 Dashboard ejecutivo | FEN 2026–2027</h1><p>Consolidado territorial de intervenciones · UIR / Descolmatación &nbsp;·&nbsp; UAT / Intervenciones agropecuarias</p></div>',unsafe_allow_html=True)
+hero("🌿 Dashboard ejecutivo | FEN 2026–2027",
+     "Consolidado territorial de intervenciones agropecuarias y de descolmatación",
+     chips=["UIR · Descolmatación","UAT · Intervenciones agropecuarias","Cobertura nacional"])
 
-geo=pd.concat([uir[NIVELES],uat[NIVELES]],ignore_index=True).drop_duplicates()
+seccion('01 · Selecciona una unidad para explorar sus intervenciones')
+st.caption('Selecciona UIR o UAT en el círculo o mediante los botones. El mapa y todos los indicadores se actualizarán según la unidad seleccionada.')
+
+def serie_avance_uir(d):
+    """Serie de avance (0-100) por fila si el Excel UIR trae columna de avance; si no, None."""
+    nombres=('AVANCE','% AVANCE','AVANCE %','PORCENTAJE AVANCE','AVANCE FISICO','AVANCE_FISICO_%','AVANCE FISICO %')
+    for c in d.columns:
+        if norm(c) in nombres:
+            v=pd.to_numeric(d[c],errors='coerce')
+            if v.notna().any():
+                if v.max()<=1: v=v*100
+                return v.clip(0,100)
+    return None
+
+def avance_uir(d):
+    """Avance promedio de UIR; si el Excel no trae columna de avance, asume 100%."""
+    s=serie_avance_uir(d)
+    return float(s.mean()) if s is not None and s.notna().any() else float('nan')
+
+def avance_uat(d):
+    if HAY_AV and d.PROG.sum()>0:
+        return float(np.clip(d.AVANCE.sum()/d.PROG.sum()*100,0,100))
+    return float('nan')
+
+unidades_av=[]
+if not uir.empty: unidades_av.append(('UIR','🌊 UIR · Descolmatación',avance_uir(uir)))
+if not uat.empty: unidades_av.append(('UAT','🌱 UAT · Intervenciones agropecuarias',avance_uat(uat)))
+
+if 'v6_sel' not in st.session_state: st.session_state.v6_sel=None
+if st.session_state.v6_sel not in [x[0] for x in unidades_av]:
+    st.session_state.v6_sel=None
+
+# El círculo SIEMPRE está completo: cada unidad ocupa una porción fija.
+# El porcentaje de avance se muestra en la etiqueta, no cambia el tamaño.
+fig_av=go.Figure(go.Pie(
+    labels=[x[0] for x in unidades_av],
+    values=[1]*len(unidades_av),
+    hole=.58,sort=False,direction='clockwise',rotation=180,
+    marker=dict(colors=[COLORES[x[0]] for x in unidades_av],line=dict(color='white',width=4)),
+    text=[f'<b>{x[0]}</b><br>{x[2]:.0f}% avance' for x in unidades_av],
+    textinfo='text',textfont=dict(size=17,color='white'),
+    pull=[0.06 if x[0]==st.session_state.v6_sel else 0 for x in unidades_av],
+    hovertemplate='<b>%{label}</b><br>Avance: %{customdata:.1f}%<extra></extra>',
+    customdata=[x[2] for x in unidades_av]))
+estilizar(fig_av)
+fig_av.update_layout(height=380,showlegend=False,margin=dict(l=10,r=10,t=20,b=10),
+    annotations=[dict(text='<b>Intervenciones</b><br>FEN 2026–2027',x=.5,y=.5,showarrow=False,font=dict(size=15,color='#174B32'))])
+
+_,c_dona,_=st.columns([1,1.4,1])
+with c_dona:
+    with st.container(border=True):
+        # Los gráficos Pie no emiten selección fiable mediante st.plotly_chart.
+        # plotly_events captura clics reales sobre cada sector de la dona.
+        if plotly_events is not None:
+            # Cambiar la clave al cambiar de unidad evita reutilizar el clic anterior.
+            clave_dona = 'dona_click_' + str(st.session_state.v6_sel or 'inicio')
+            clics = plotly_events(fig_av, click_event=True, select_event=False,
+                                  hover_event=False, override_height=380,
+                                  key=clave_dona)
+            if clics:
+                idx = clics[0].get('pointNumber', clics[0].get('pointIndex'))
+                if idx is not None and 0 <= int(idx) < len(unidades_av):
+                    codigo = unidades_av[int(idx)][0]
+                    st.session_state.v6_sel = None if st.session_state.v6_sel == codigo else codigo
+                    st.rerun()
+        else:
+            st.plotly_chart(fig_av, use_container_width=True, key='v6_dona_visual')
+            st.caption('Para activar el clic directamente en el círculo, instala: pip install streamlit-plotly-events')
+        # Botones con el nombre de cada unidad (respaldo fiable al clic en el gráfico)
+        bcols=st.columns(len(unidades_av))
+        for col,(cod,nombre,pct) in zip(bcols,unidades_av):
+            activo=st.session_state.v6_sel==cod
+            if col.button(f'{nombre.split(" · ")[0]} · {pct:.0f}%' if np.isfinite(pct) else nombre.split(' · ')[0]+' · Sin avance',key=f'v6_btn_{cod}',
+                          type='primary' if activo else 'secondary',use_container_width=True):
+                st.session_state.v6_sel=None if activo else cod
+                st.rerun()
+
+
+if st.session_state.v6_sel is None:
+    st.info('Selecciona UIR o UAT en el gráfico superior para ver sus indicadores, filtros, mapa y detalle.')
+    st.stop()
+
+# Los filtros se alimentan EXCLUSIVAMENTE de la unidad activa.
+vista=st.session_state.v6_sel
+geo=(uir if vista=='UIR' else uat)[NIVELES].drop_duplicates().copy()
 geo=geo[(geo[NIVELES]!="").all(axis=1)]
-seccion('01 · Filtros del territorio')
+
+# Al cambiar de unidad, limpiar filtros de la unidad anterior.
+if st.session_state.get('filtros_unidad_anterior') != vista:
+    for clave in ('v2_dep','v2_prov','v2_dist'):
+        st.session_state.pop(clave,None)
+    st.session_state.filtros_unidad_anterior=vista
+
+seccion('02 · Filtros del territorio · '+vista)
 f1,f2,f3,f4=st.columns([1.15,1.15,1.15,1])
-dep=f1.selectbox('Departamento',['Todo el Perú']+sorted(geo.DEPARTAMENTO.unique()),key='v2_dep')
+ops_dep=['Todo el Perú']+sorted(geo.DEPARTAMENTO.unique())
+if st.session_state.get('v2_dep') not in ops_dep:
+    st.session_state.v2_dep='Todo el Perú'
+dep=f1.selectbox('Departamento',ops_dep,key='v2_dep')
 g=geo if dep=='Todo el Perú' else geo[geo.DEPARTAMENTO.eq(dep)]
-prov=f2.selectbox('Provincia',['Todas las provincias']+sorted(g.PROVINCIA.unique()),key='v2_prov')
+ops_prov=['Todas las provincias']+sorted(g.PROVINCIA.unique())
+if st.session_state.get('v2_prov') not in ops_prov:
+    st.session_state.v2_prov='Todas las provincias'
+prov=f2.selectbox('Provincia',ops_prov,key='v2_prov')
 g=g if prov=='Todas las provincias' else g[g.PROVINCIA.eq(prov)]
-dist=f3.selectbox('Distrito',['Todos los distritos']+sorted(g.DISTRITO.unique()),key='v2_dist')
-vista=f4.selectbox('Unidad',['Ambas unidades','UIR','UAT'],key='v2_unidad')
+ops_dist=['Todos los distritos']+sorted(g.DISTRITO.unique())
+if st.session_state.get('v2_dist') not in ops_dist:
+    st.session_state.v2_dist='Todos los distritos'
+dist=f3.selectbox('Distrito',ops_dist,key='v2_dist')
+vista=st.session_state.v6_sel or 'Ambas unidades'
+f4.selectbox('Unidad activa', [vista], index=0, disabled=True, key='unidad_activa_visual')
 
 def filtrar(d):
     if dep!='Todo el Perú': d=d[d.DEPARTAMENTO.eq(dep)]
@@ -167,34 +367,52 @@ loc_u=u[NIVELES].drop_duplicates();loc_t=t[NIVELES].drop_duplicates()
 territorios=pd.concat([loc_u,loc_t],ignore_index=True).drop_duplicates()
 compartidos=loc_u.merge(loc_t,on=NIVELES,how='inner')
 
-seccion('02 · Panorama consolidado')
-k=st.columns(5)
-k[0].metric('Departamentos',territorios.DEPARTAMENTO.nunique())
-k[1].metric('Provincias',len(territorios[NIVELES[:2]].drop_duplicates()))
-k[2].metric('Distritos únicos',len(territorios))
-k[3].metric('Intervenciones UIR',len(u))
-k[4].metric('Registros UAT',len(t))
-st.caption(f'Cobertura compartida: {len(compartidos)} distritos presentes en ambas unidades. Los distritos se contabilizan sin duplicados.')
+# El panorama solo se despliega después de elegir una unidad.
+seccion('03 · Panorama territorial · '+('UIR' if vista=='UIR' else 'UAT'))
+if vista=='UIR':
+    k=st.columns(3)
+    k[0].metric('Departamentos',territorios.DEPARTAMENTO.nunique())
+    k[1].metric('Provincias',len(territorios[NIVELES[:2]].drop_duplicates()))
+    k[2].metric('Distritos',len(territorios))
+    st.markdown('#### 📌 Indicadores ejecutivos · UIR')
+    total=len(u)
+    paquetes=u.loc[u.PAQUETE.ne('SIN PAQUETE'),'PAQUETE'].nunique()
+    estados=u.ESTADO.value_counts()
+    def cantidad_estado(nombre): return int(estados.get(nombre,0))
+    indicadores=[
+        ('PAQUETES (DEPTO-PQ)',paquetes,'Paquetes con intervenciones'),
+        ('INTERVENCIONES TOTALES',total,'Incluye atendidas en otros proyectos'),
+        ('CONTRATADOS',cantidad_estado('CONTRATADO'),'Procesos adjudicados'),
+        ('POR CONTRATAR',cantidad_estado('EN CONTRATACION'),'En proceso de selección'),
+        ('EN EJECUCIÓN',cantidad_estado('EN EJECUCION'),'Obras/actividades activas'),
+        ('CULMINADAS',cantidad_estado('CULMINADO'),'Acumulado al corte'),
+        ('ATENDIDOS EN OTROS PROYECTOS',cantidad_estado('ATENDIDO EN OTROS PROYECTOS'),'Sin intervención en este proyecto'),
+        ('BENEFICIARIOS',f'{u.BENEFICIARIOS.sum():,.0f}','Alcance total'),
+        ('HECTÁREAS',f'{u.HECTAREAS.sum():,.2f}','Alcance total'),
+        ('KILÓMETROS',f'{u.KM.sum():,.2f}','Alcance total'),
+    ]
+    for inicio in (0,5):
+        columnas=st.columns(5)
+        for columna,(nombre,valor,ayuda) in zip(columnas,indicadores[inicio:inicio+5]):
+            columna.metric(nombre,valor,help=ayuda)
+    st.caption(f'UIR registra {total:,} intervenciones en este territorio; '
+               f'{int((u.PAQUETE != "SIN PAQUETE").sum()):,} están asociadas a '
+               f'{paquetes:,} paquetes distintos. Las intervenciones atendidas en otros proyectos '
+               'se incluyen en el total, pero no necesariamente forman parte de un paquete.')
 
-# Comparación simple: cifras distintas en tarjetas, no en un gráfico de suma.
-a,b=st.columns(2)
-with a:
-    with st.container(border=True):
-        st.markdown('**🌊 UIR · Descolmatación**')
-        c1,c2,c3=st.columns(3)
-        c1.metric('Paquetes',u.loc[u.PAQUETE.ne('SIN PAQUETE'),'PAQUETE'].nunique())
-        c2.metric('Beneficiarios',f'{u.BENEFICIARIOS.sum():,.0f}')
-        c3.metric('Kilómetros',f'{u.KM.sum():,.2f}')
-with b:
-    with st.container(border=True):
-        st.markdown('**🌱 UAT · Intervenciones agropecuarias**')
-        c1,c2,c3=st.columns(3)
-        c1.metric('Intervenciones',t.KIT.nunique())
-        c2.metric('Atenciones',f'{t.PROG.sum():,.0f}')
-        c3.metric('Distritos',len(loc_t))
+else:
+    k=st.columns(3)
+    k[0].metric('Departamentos',territorios.DEPARTAMENTO.nunique())
+    k[1].metric('Provincias',len(territorios[NIVELES[:2]].drop_duplicates()))
+    k[2].metric('Distritos',len(territorios))
+    st.markdown('**🌱 UAT · Intervenciones agropecuarias**')
+    k=st.columns(3)
+    k[0].metric('Kits',t.KIT.nunique())
+    k[1].metric('Intervenciones',len(t))
+    k[2].metric('Atenciones programadas',f'{t.PROG.sum():,.0f}')
 
-seccion('03 · Explorador territorial interactivo')
-st.caption('Un mapa compartido, con UIR en azul y UAT en verde. Haz clic en un punto (o en una barra) para bajar de departamento a provincia y a distrito.')
+seccion('04 · Explorador territorial interactivo')
+st.caption('Mapa de la unidad seleccionada (o de ambas si no hay selección). Haz clic en un punto o barra para navegar por departamento, provincia y distrito.')
 
 # Cada nivel territorial agrupa las ubicaciones de cada unidad, para evitar
 # mostrar centenares de distritos en la vista nacional.
@@ -360,7 +578,7 @@ altura=int(np.clip(150+42*min(n_lugares,28),340,570))  # pocas barras -> gráfic
 izq,der=st.columns([1,1],gap='medium')
 with izq:
     with st.container(border=True):
-        st.markdown('**Cobertura territorial · UIR y UAT**')
+        st.markdown(f'**Cobertura territorial · {vista}**')
         puntos=mapa_data.dropna(subset=['LAT','LON_VIS']).copy()
         puntos['UNIDAD']=pd.Categorical(puntos['UNIDAD'],categories=['UAT','UIR'],ordered=True)
         puntos=puntos.sort_values('UNIDAD')
@@ -407,7 +625,8 @@ with der:
                 orientation='h',barmode='group',color_discrete_map=COLORES,
                 custom_data=['LUGAR'],height=altura,text_auto=',.0f',
                 labels={'VALOR':'Beneficiarios / atenciones','ETIQUETA':''})
-            graf.update_layout(margin=dict(l=8,r=12,t=20,b=10),legend=dict(orientation='h',y=1.06),paper_bgcolor='white',plot_bgcolor='white')
+            estilizar(graf)
+            graf.update_layout(margin=dict(l=8,r=12,t=20,b=10),legend=dict(orientation='h',y=1.06))
             graf.update_xaxes(rangemode='tozero');graf.update_layout(bargap=.35)
             if ranking.VALOR.sum()==0:
                 st.info('Este territorio no registra beneficiarios/atenciones en los datos (sectores con 0 beneficiarios o intervenciones atendidas en otros proyectos). Revisa el detalle más abajo.')
@@ -430,123 +649,61 @@ def por_ruta(d):
         d=d[d[NIVELES[i]].eq(l)]
     return d
 
-st.markdown('<div style="display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;font-size:13px;color:#52685C;margin:8px 2px 14px"><span><b style="color:#1976D2">●</b> UIR · Descolmatación</span><span><b style="color:#16A34A">●</b> UAT · Intervenciones</span><span style="margin-left:auto;font-size:12px">Tamaño normalizado por unidad · clic en un punto o barra para profundizar · ubicaciones sin coordenada exacta son aproximadas</span></div>',unsafe_allow_html=True)
+leyenda_unidad = ('<span><b style="color:#1976D2">●</b> UIR · Descolmatación</span>'
+                  if vista == 'UIR' else
+                  '<span><b style="color:#16A34A">●</b> UAT · Intervenciones</span>')
+st.markdown('<div style="display:flex;flex-wrap:wrap;gap:6px 20px;align-items:center;font-size:13px;color:#52685C;margin:8px 2px 14px">'
+            + leyenda_unidad +
+            '<span style="margin-left:auto;font-size:12px">Clic en un punto o barra para profundizar · ubicaciones sin coordenada exacta son aproximadas</span></div>',
+            unsafe_allow_html=True)
 
 if len(ruta)>len(fijo) or len(ruta)==3:
-    d_u=por_ruta(u); d_t=por_ruta(t)
+    detalle = por_ruta(u if vista == 'UIR' else t)
     with st.container(border=True):
-        st.markdown('**📍 Detalle de '+' › '.join(x.title() for x in ruta)+'**')
-        cu,ct=st.columns(2,gap='large')
-        with cu:
+        st.markdown('**📍 Detalle de '+' › '.join(x.title() for x in ruta)+' · '+vista+'**')
+        if detalle.empty:
+            st.info('No hay intervenciones de '+vista+' en este territorio.')
+        elif vista == 'UIR':
             st.markdown('🌊 **UIR · Descolmatación**')
-            if d_u.empty:
-                st.caption('Sin intervenciones UIR en este territorio.')
+            m=st.columns(5)
+            m[0].metric('Intervenciones',len(detalle))
+            m[1].metric('Paquetes',detalle.loc[detalle.PAQUETE.ne('SIN PAQUETE'),'PAQUETE'].nunique())
+            m[2].metric('Beneficiarios',f'{detalle.BENEFICIARIOS.sum():,.0f}')
+            m[3].metric('Hectáreas',f'{detalle.HECTAREAS.sum():,.2f}')
+            m[4].metric('Kilómetros',f'{detalle.KM.sum():,.2f}')
+            paquetes_local=detalle[detalle.PAQUETE.ne('SIN PAQUETE')]
+            if not paquetes_local.empty:
+                resumen_pq=(paquetes_local.groupby('PAQUETE',as_index=False)
+                    .agg(Intervenciones=('PAQUETE','size'),Beneficiarios=('BENEFICIARIOS','sum'),
+                         Hectáreas=('HECTAREAS','sum'),Kilómetros=('KM','sum')))
+                with st.expander('📦 Ver desglose de intervenciones por paquete', expanded=False):
+                    st.dataframe(resumen_pq,hide_index=True,use_container_width=True)
             else:
-                m=st.columns(2)
-                m[0].metric('Intervenciones',len(d_u))
-                m[1].metric('Beneficiarios',f'{d_u.BENEFICIARIOS.sum():,.0f}')
-                m=st.columns(2)
-                m[0].metric('Hectáreas',f'{d_u.HECTAREAS.sum():,.2f}')
-                m[1].metric('Km',f'{d_u.KM.sum():,.2f}')
-                st.caption(' · '.join(f'{k.title()}: {v}' for k,v in d_u.ESTADO.value_counts().items()))
-        with ct:
+                st.caption('No se identificaron paquetes en este territorio.')
+            st.caption(' · '.join(f'{k.title()}: {v}' for k,v in detalle.ESTADO.value_counts().items()))
+            extra=['DISTRITO'] if len(ruta)<3 else []
+            with st.expander('🌊 Ver tabla UIR (sectores)',expanded=False):
+                st.dataframe(detalle[extra+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']],
+                             hide_index=True,use_container_width=True)
+        else:
             st.markdown('🌱 **UAT · Intervenciones agropecuarias**')
-            if d_t.empty:
-                st.caption('Sin intervenciones UAT en este territorio.')
-            else:
-                m=st.columns(2)
-                m[0].metric('Intervenciones',d_t.KIT.nunique())
-                m[1].metric('Atenciones',f'{d_t.PROG.sum():,.0f}')
-                m=st.columns(2)
-                m[0].metric('Distritos',len(d_t[NIVELES].drop_duplicates()))
-                m[1].metric('Cumplimiento',f'{d_t.AVANCE.sum()/d_t.PROG.sum()*100:.1f}%' if HAY_AV and d_t.PROG.sum()>0 else 'Sin avance')
-        extra=['DISTRITO'] if len(ruta)<3 else []
-        pestanas=[]
-        if not d_u.empty: pestanas.append('🌊 Tabla UIR (sectores)')
-        if not d_t.empty: pestanas.append('🌱 Tabla UAT (kits)')
-        if pestanas:
-            for tab,nombre in zip(st.tabs(pestanas),pestanas):
-                with tab:
-                    if 'UIR' in nombre:
-                        st.dataframe(d_u[extra+['SECTOR','PAQUETE','ESTADO','BENEFICIARIOS','HECTAREAS','KM']],
-                                     hide_index=True,use_container_width=True)
-                    else:
-                        cols_t=extra+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
-                        st.dataframe(d_t[cols_t],hide_index=True,use_container_width=True,
-                                     column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
+            m=st.columns(4)
+            m[0].metric('Tipos de intervención',detalle.KIT.nunique())
+            m[1].metric('Atenciones programadas',f'{detalle.PROG.sum():,.0f}')
+            m[2].metric('Distritos',len(detalle[NIVELES].drop_duplicates()))
+            m[3].metric('Cumplimiento',f'{detalle.AVANCE.sum()/detalle.PROG.sum()*100:.1f}%' if HAY_AV and detalle.PROG.sum()>0 else 'Sin avance reportado')
+            extra=['DISTRITO'] if len(ruta)<3 else []
+            cols_t=extra+['KIT','META','PROG']+(['AV_META','AVANCE','PCT'] if HAY_AV else [])
+            with st.expander('🌱 Ver tabla UAT (kits)',expanded=False):
+                st.dataframe(detalle[cols_t],hide_index=True,use_container_width=True,
+                             column_config={'PCT':st.column_config.ProgressColumn('Cumplimiento',min_value=0,max_value=100,format='%.0f%%')})
 
-# ═════════════ 05 · AVANCE POR UNIDAD (DONA + DETALLE SOLO AL HACER CLIC) ═════════════
-seccion('05 · Avance de intervenciones por unidad')
-st.caption('Haz clic en UIR o UAT (en el círculo o en los botones) para desplegar su información. Para cerrarla, vuelve a pulsar el botón de la unidad.')
-
-def serie_avance_uir(d):
-    """Serie de avance (0-100) por fila si el Excel UIR trae columna de avance; si no, None."""
-    nombres=('AVANCE','% AVANCE','AVANCE %','PORCENTAJE AVANCE','AVANCE FISICO','AVANCE_FISICO_%','AVANCE FISICO %')
-    for c in d.columns:
-        if norm(c) in nombres:
-            v=pd.to_numeric(d[c],errors='coerce')
-            if v.notna().any():
-                if v.max()<=1: v=v*100
-                return v.clip(0,100)
-    return None
-
-def avance_uir(d):
-    """Avance promedio de UIR; si el Excel no trae columna de avance, asume 100%."""
-    s=serie_avance_uir(d)
-    return float(s.mean()) if s is not None and s.notna().any() else 100.0
-
-def avance_uat(d):
-    if HAY_AV and d.PROG.sum()>0:
-        return float(np.clip(d.AVANCE.sum()/d.PROG.sum()*100,0,100))
-    return 100.0
-
-unidades_av=[]
-if not u.empty: unidades_av.append(('UIR','🌊 UIR · Descolmatación',avance_uir(u)))
-if not t.empty: unidades_av.append(('UAT','🌱 UAT · Intervenciones agropecuarias',avance_uat(t)))
-
-if 'v6_sel' not in st.session_state: st.session_state.v6_sel=None
-if st.session_state.v6_sel not in [x[0] for x in unidades_av]:
-    st.session_state.v6_sel=None
-
-# El círculo SIEMPRE está completo: cada unidad ocupa una porción fija.
-# El porcentaje de avance se muestra en la etiqueta, no cambia el tamaño.
-fig_av=go.Figure(go.Pie(
-    labels=[x[0] for x in unidades_av],
-    values=[1]*len(unidades_av),
-    hole=.58,sort=False,direction='clockwise',
-    marker=dict(colors=[COLORES[x[0]] for x in unidades_av],line=dict(color='white',width=4)),
-    text=[f'<b>{x[0]}</b><br>{x[2]:.0f}% avance' for x in unidades_av],
-    textinfo='text',textfont=dict(size=17,color='white'),
-    pull=[0.06 if x[0]==st.session_state.v6_sel else 0 for x in unidades_av],
-    hovertemplate='<b>%{label}</b><br>Avance: %{customdata:.1f}%<extra></extra>',
-    customdata=[x[2] for x in unidades_av]))
-fig_av.update_layout(height=380,showlegend=False,margin=dict(l=10,r=10,t=20,b=10),
-    paper_bgcolor='white',
-    annotations=[dict(text='<b>Intervenciones</b><br>FEN 2026–2027',x=.5,y=.5,showarrow=False,font=dict(size=15,color='#174B32'))])
-
-_,c_dona,_=st.columns([1,1.4,1])
-with c_dona:
-    with st.container(border=True):
-        try:
-            ev=st.plotly_chart(fig_av,use_container_width=True,key='v6_dona',
-                               on_select='rerun',selection_mode='points')
-            pts=ev.selection.points
-            if pts:
-                idx=pts[0].get('point_number',pts[0].get('point_index'))
-                if idx is not None and idx!=st.session_state.get('v6_ultimo') and idx<len(unidades_av):
-                    st.session_state.v6_ultimo=idx
-                    st.session_state.v6_sel=unidades_av[idx][0]
-                    st.rerun()
-        except TypeError:
-            st.plotly_chart(fig_av,use_container_width=True)
-        # Botones con el nombre de cada unidad (respaldo fiable al clic en el gráfico)
-        bcols=st.columns(len(unidades_av))
-        for col,(cod,nombre,pct) in zip(bcols,unidades_av):
-            activo=st.session_state.v6_sel==cod
-            if col.button(f'{nombre.split(" · ")[0]} · {pct:.0f}%',key=f'v6_btn_{cod}',
-                          type='primary' if activo else 'secondary',use_container_width=True):
-                st.session_state.v6_sel=None if activo else cod
-                st.rerun()
+# La navegación del mapa también filtra TODOS los gráficos y tablas posteriores.
+# Se conservan los datos completos en uir/uat para volver a navegar o subir de nivel.
+if ruta:
+    u=por_ruta(u)
+    t=por_ruta(t)
+    st.caption('📍 Los análisis siguientes están filtrados por: ' + ' › '.join(x.title() for x in ruta))
 
 sel=st.session_state.v6_sel
 dt=t  # valor por defecto; si se abre UAT, se redefine según la intervención elegida
@@ -581,12 +738,8 @@ if sel=='UIR':
     st.markdown('#### 🌊 UIR · Descolmatación')
 
     # ───────── ALERTAS: QUÉ DICE EL DASHBOARD ─────────
+    # (los estilos .alert-red / .alert-amber / .alert-green están en el bloque TEMA VISUAL)
     seccion('📈 Estado del portafolio · UIR')
-    st.markdown("""<style>
-    .alert-red{background:#FEF2F2;border-left:5px solid #DC2626;padding:12px 14px;border-radius:8px;color:#7F1D1D;height:100%}
-    .alert-amber{background:#FFF7ED;border-left:5px solid #F59E0B;padding:12px 14px;border-radius:8px;color:#78350F;height:100%}
-    .alert-green{background:#E8F5E9;border-left:5px solid #2E7D32;padding:12px 14px;border-radius:8px;color:#1B5E20;height:100%}
-    </style>""",unsafe_allow_html=True)
     RE_PROBLEMA='ATENDIDO EN OTROS PROYECTOS|PENDIENTE|RIESGO|RETRAS|OBSERV'
     total_u=len(u)
     atencion_u=int(u.ESTADO.str.contains(RE_PROBLEMA,regex=True,na=False).sum())
@@ -617,6 +770,8 @@ if sel=='UIR':
     s1,s2=st.columns(2)
     indicador=s1.radio('Indicador a evaluar',list(NOMBRES_IND),format_func=NOMBRES_IND.get,horizontal=True,key='v5_ind')
     deptos_disp=sorted(u.DEPARTAMENTO.dropna().unique())
+    if st.session_state.get('v5_dept') not in deptos_disp:
+        st.session_state.pop('v5_dept', None)
     dept=s2.selectbox('Departamento para el detalle provincial',deptos_disp,key='v5_dept') if deptos_disp else None
     fmt_ind='%{value:,.0f}' if indicador in ('Intervenciones','BENEFICIARIOS') else '%{value:,.1f}'
     nom=NOMBRES_IND[indicador]
@@ -648,7 +803,21 @@ if sel=='UIR':
 
     # ───────── DETALLE POR PAQUETE ─────────
     seccion('🔍 Detalle por paquete · UIR')
+    # Aplicar TAMBIÉN el departamento elegido en Distribución territorial.
+    # 'u' ya respeta filtros superiores y la navegación del mapa.
+    u_pq = u_pq[u_pq.DEPARTAMENTO.eq(dept)].copy() if dept else u_pq.iloc[:0].copy()
+    orden_pkg = sorted(u_pq.PAQUETE.unique(), key=clave_pq)
+    # Sincronizar el selector con el filtro territorial y la ruta del mapa.
+    # Una selección de otro departamento nunca debe mantenerse.
+    firma_paquetes = (vista, dep, prov, dist, dept, tuple(ruta), tuple(orden_pkg))
+    if st.session_state.get('v9_firma_paquetes') != firma_paquetes:
+        st.session_state.pop('v5_pkg', None)
+        st.session_state['v9_firma_paquetes'] = firma_paquetes
+    if st.session_state.get('v5_pkg') not in orden_pkg:
+        st.session_state.pop('v5_pkg', None)
     paquete_detalle=st.selectbox('Selecciona un paquete',orden_pkg,key='v5_pkg') if orden_pkg else None
+    if not orden_pkg:
+        st.info('No hay paquetes asociados al territorio seleccionado.')
     if paquete_detalle:
         det=u_pq[u_pq.PAQUETE==paquete_detalle]
         q=st.columns(4)
@@ -710,33 +879,7 @@ if sel=='UIR':
                 fig.update_traces(textposition='outside',cliponaxis=False);fig.update_layout(height=340,xaxis_title=None)
                 graficar(fig,'v5_restricciones')
 
-    # ───────── CONTROL DE CALIDAD ─────────
-    with st.expander('🧪 Control de calidad del Excel UIR'):
-        problemas=0
-        dpq=uir.PAQUETE.str.replace(r'\s*PQ\s*\d+$','',regex=True)
-        incons=uir[uir.PAQUETE.ne('SIN PAQUETE') & dpq.ne(uir.DEPARTAMENTO)]
-        if len(incons):
-            problemas+=1
-            st.warning(f'{len(incons)} intervenciones tienen un paquete que no corresponde a su departamento:')
-            st.dataframe(incons[['DEPARTAMENTO','PROVINCIA','DISTRITO','SECTOR','PAQUETE']],hide_index=True,use_container_width=True)
-        sin_pq=uir[uir.PAQUETE.eq('SIN PAQUETE') & uir.ESTADO.ne('ATENDIDO EN OTROS PROYECTOS')]
-        if len(sin_pq):
-            problemas+=1
-            st.warning(f'{len(sin_pq)} intervenciones vigentes (no atendidas en otros proyectos) no tienen paquete asignado:')
-            st.dataframe(sin_pq[['DEPARTAMENTO','PROVINCIA','DISTRITO','SECTOR','ESTADO']],hide_index=True,use_container_width=True)
-        dup=uir[uir.duplicated(['DISTRITO','SECTOR'],keep=False)]
-        if len(dup):
-            problemas+=1
-            st.warning(f'{len(dup)} filas comparten Distrito + Sector (posibles duplicados):')
-            st.dataframe(dup[['DISTRITO','SECTOR','PAQUETE','ESTADO']].sort_values(['DISTRITO','SECTOR']),hide_index=True,use_container_width=True)
-        st.caption(f"Atendidos en otros proyectos: {int(uir.ESTADO.eq('ATENDIDO EN OTROS PROYECTOS').sum())} · Paquetes con intervenciones: {uir.loc[uir.PAQUETE.ne('SIN PAQUETE'),'PAQUETE'].nunique()}")
-        if problemas==0: st.success('Sin inconsistencias detectadas.')
-    with st.expander('📝 Columnas que activarían más secciones'):
-        CATALOGO={'Avance_Fisico_%':'Avance real (0-100): activa el semáforo real','Avance_Prog_%':'Avance programado (0-100)','Monto_Contratado':'Monto del contrato','Monto_Ejecutado':'Monto ejecutado/valorizado','Fecha_Cambio_Estado':'Fecha en que pasó al estado actual','Restriccion':'Permiso ANA, predio/acceso, maquinaria, clima, conflicto social, otro'}
-        faltan={k:v for k,v in CATALOGO.items() if k not in uir.columns}
-        if faltan: st.markdown('\n'.join(f'- **{k}**: {v}' for k,v in faltan.items()))
-        else: st.success('El Excel ya trae todas las columnas opcionales.')
-
+    
 # ── Detalle UAT: solo visible al seleccionar UAT ──
 elif sel=='UAT':
     st.markdown('#### 🌱 UAT · Intervenciones y metas')
@@ -815,9 +958,6 @@ elif sel=='UAT':
 
 
 # ═════════════ SECCIONES FINALES ═════════════
-
-
-
 
 with st.expander('Notas metodológicas y calidad de datos'):
     st.markdown('**UIR:** se excluye del impacto el estado «Atendido en otros proyectos». **UAT:** Praderas = meta física ÷ 5 × 3. **Cobertura:** distritos únicos entre unidades. **Beneficiarios:** no se suman UIR y UAT, pues no se ha validado que sean personas únicas ni indicadores equivalentes.')
